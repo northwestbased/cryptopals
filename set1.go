@@ -125,3 +125,15 @@ func SingleByteXOrOracle(ct []byte) bool {
 	}
 	return true
 }
+
+func HammingDistance(b1, b2 []byte) int {
+	hd := 0
+	for i := 0; i < len(b1); i++ {
+		xor := int(b1[i] ^ b2[i])
+		for xor > 0 {
+			hd += xor % 2
+			xor = xor / 2
+		}
+	}
+	return hd
+}
