@@ -137,3 +137,50 @@ func HammingDistance(b1, b2 []byte) int {
 	}
 	return hd
 }
+
+func FindBestKeyLength(ct []byte) int {
+	smallestHd := math.MaxFloat64
+	var keyLen int
+	for i := 2; i < 41; i++ {
+		hd := float64(HammingDistance(ct[:i * 6], ct[i * 6:i * 12])) / float64(i)
+		if hd < smallestHd {
+			smallestHd = hd
+			keyLen = i
+		}
+	}
+	return keyLen
+}
+
+
+
+func BreakRepeatingKeyXOrCipher(ct []byte) []byte{
+	keyLen := FindBestKeyLength(ct)
+	var ctBlocks [][]byte
+	//break the ciphertext into blocks of KEYSIZE length
+	for i := 0; i < len(ct) - keyLen; i += keyLen {
+		endIndex := i + keyLen
+		if endIndex > len(ct) {
+			endIndex = len(ct)
+		}
+		ctBlocks = append(ctBlocks, ct[i:endIndex])
+	}
+	//Now transpose the blocks: make a block that is the first byte of every block, and a block that is the second byte of every block, and so on.
+	var singleByteXOrBlocks [][]byte
+	for i := 0; i < keyLen; i++ {
+		var newBlock []byte
+		for _, block := range ctBlocks {
+			if i < len(block) {
+				newBlock = append(newBlock, block[i])
+			}
+		}
+		singleByteXOrBlocks = append(singleByteXOrBlocks, newBlock)
+	}
+	//Solve each block as if it was single-character XOR. You already have code to do this.
+	var key []byte
+	for _, block := range singleByteXOrBlocks {
+		newChar, _, _ := BreakSingleByteXOr(block)
+		key = append(key, newChar)
+	}
+	return key
+
+}

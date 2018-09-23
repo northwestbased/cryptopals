@@ -4,6 +4,7 @@ import (
 	"encoding/hex"
 	"log"
 	"testing"
+	"encoding/base64"
 )
 
 func Test_1(t *testing.T) {
@@ -70,7 +71,13 @@ func Test_5(t *testing.T) {
 	ct := RepeatingKeyXOrCipher(pt, []byte("ICE"))
 	expected := "0b3637272a2b2e63622c2e69692a23693a2a3c6324202d623d63343c2a26226324272765272a282b2f20430a652e2c652a3124333a653e2b2027630c692b20283165286326302e27282f"
 	if hex.EncodeToString(ct) != expected {
-		t.Errorf("Generated ciphertext doesn't match expected ciphertext.\nexpected:\t%v\nactual:     %v", expected, hex.EncodeToString(ct))
+		t.Errorf("Generated ciphertext doesn't match expected ciphertext.\nexpected: %v\nactual:   %v", expected, hex.EncodeToString(ct))
+	}
+
+	//test decryption
+	ptOut := RepeatingKeyXOrCipher(ct, []byte("ICE"))
+	if string(ptOut) != string(pt) {
+		t.Errorf("Decrypted plaintext doesn't match original plaintext.\nexpected: %v\nactual:   %v", string(ptOut), string(pt))
 	}
 
 }
@@ -85,3 +92,18 @@ func Test_HammingDistance(t *testing.T)  {
 
 
 }
+
+func Test_6(t *testing.T) {
+	lines, _ := ReadFileByLine("input/6.txt")
+	var ct []byte
+	for _, l := range lines {
+		dl, _ := base64.StdEncoding.DecodeString(l)
+		ct = append(ct, dl...)
+	}
+	key := BreakRepeatingKeyXOrCipher(ct)
+	plaintext := RepeatingKeyXOrCipher(ct, key)
+	log.Println("Challenge 6 Key:", string(key))
+	log.Printf("Challenge 6 Plaintext:\n%v", string(plaintext))
+}
+
+
