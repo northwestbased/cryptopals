@@ -103,7 +103,34 @@ func Test_6(t *testing.T) {
 	key := BreakRepeatingKeyXOrCipher(ct)
 	plaintext := RepeatingKeyXOrCipher(ct, key)
 	log.Println("Challenge 6 Key:", string(key))
-	log.Printf("Challenge 6 Plaintext:\n%v", string(plaintext))
+	log.Printf("Challenge 6 Plaintext:\n%v\n", string(plaintext))
 }
 
+func Test_7(t *testing.T) {
+	lines, _ := ReadFileByLine("input/7.txt")
+	var ct []byte
+	for _, l := range lines {
+		dl, _ := base64.StdEncoding.DecodeString(l)
+		ct = append(ct, dl...)
+	}
 
+	pt := AESInECBMode(ct, []byte("YELLOW SUBMARINE"))
+
+	log.Printf("Challenge 7 Plaintext:\n%v\n", string(pt))
+}
+
+func Test_8(t *testing.T) {
+	lines, _ := ReadFileByLine("input/8.txt")
+	count := 0
+	for _, l := range lines {
+		dl, _ := hex.DecodeString(l)
+		if AESInECBModeOracle(dl) {
+			count += 1
+			log.Printf("Challeng 8: found ECB-encrypted ciphertext:\n%v\n", dl)
+		}
+	}
+	if count != 1 {
+		t.Error("Wrong number of ECB-encrypted ciphertexts found.")
+	}
+
+}
