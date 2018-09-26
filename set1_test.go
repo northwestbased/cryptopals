@@ -1,10 +1,10 @@
 package cryptopals
 
 import (
+	"encoding/base64"
 	"encoding/hex"
 	"log"
 	"testing"
-	"encoding/base64"
 )
 
 func Test_1(t *testing.T) {
@@ -82,14 +82,13 @@ func Test_5(t *testing.T) {
 
 }
 
-func Test_HammingDistance(t *testing.T)  {
+func Test_HammingDistance(t *testing.T) {
 	b1 := []byte("this is a test")
 	b2 := []byte("wokka wokka!!!")
 	hd := HammingDistance(b1, b2)
 	if hd != 37 {
 		t.Errorf("Hamming Distance calculated as %v instead of 37", hd)
 	}
-
 
 }
 
@@ -126,7 +125,7 @@ func Test_8(t *testing.T) {
 		dl, _ := hex.DecodeString(l)
 		if AESInECBModeOracle(dl) {
 			count += 1
-			log.Printf("Challeng 8: found ECB-encrypted ciphertext:\n%v\n", dl)
+			log.Printf("Challenge 8: found ECB-encrypted ciphertext:\n%v\n", dl)
 		}
 	}
 	if count != 1 {

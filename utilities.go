@@ -25,10 +25,8 @@ func ReadFileByLine(filename string) ([]string, error) {
 	return lines, nil
 }
 
-
-
 func BreakIntoBlocks(buffer []byte, size int) [][]byte {
-	if len(buffer) % size != 0 {
+	if len(buffer)%size != 0 {
 		panic("Buffer isn't a multiple of size")
 	}
 	var out [][]byte

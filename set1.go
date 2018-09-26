@@ -1,12 +1,12 @@
 package cryptopals
 
 import (
+	"crypto/aes"
 	"encoding/base64"
 	"encoding/hex"
 	"errors"
 	"math"
 	"unicode"
-	"crypto/aes"
 )
 
 func HexToBase64(hexStr string) (string, error) {
@@ -143,7 +143,7 @@ func FindBestKeyLength(ct []byte) int {
 	smallestHd := math.MaxFloat64
 	var keyLen int
 	for i := 2; i < 41; i++ {
-		hd := float64(HammingDistance(ct[:i * 4], ct[i * 4:i * 8])) / float64(i)
+		hd := float64(HammingDistance(ct[:i*4], ct[i*4:i*8])) / float64(i)
 		if hd < smallestHd {
 			smallestHd = hd
 			keyLen = i
@@ -152,13 +152,11 @@ func FindBestKeyLength(ct []byte) int {
 	return keyLen
 }
 
-
-
-func BreakRepeatingKeyXOrCipher(ct []byte) []byte{
+func BreakRepeatingKeyXOrCipher(ct []byte) []byte {
 	keyLen := FindBestKeyLength(ct)
 	var ctBlocks [][]byte
 	//break the ciphertext into blocks of KEYSIZE length
-	for i := 0; i < len(ct) - keyLen; i += keyLen {
+	for i := 0; i < len(ct)-keyLen; i += keyLen {
 		endIndex := i + keyLen
 		if endIndex > len(ct) {
 			endIndex = len(ct)
@@ -186,20 +184,20 @@ func BreakRepeatingKeyXOrCipher(ct []byte) []byte{
 
 }
 
-
-func AESInECBMode(ct, key []byte) []byte{
+//decryption function
+func AESInECBMode(ct, key []byte) []byte {
 	cipher, err := aes.NewCipher(key)
 	if err != nil {
 		panic(err)
 	}
 	bs := cipher.BlockSize()
-	if len(ct) % bs != 0 {
+	if len(ct)%bs != 0 {
 		panic("Ciphertext length needs to be a multiple of the blocksize")
 	}
 	dst := make([]byte, 16, 16)
 	var out []byte
 
-	for i:=0; i < len(ct); i+= bs {
+	for i := 0; i < len(ct); i += bs {
 		cipher.Decrypt(dst, ct[i:i+bs])
 		out = append(out, dst[:]...)
 	}
@@ -207,10 +205,10 @@ func AESInECBMode(ct, key []byte) []byte{
 	return out
 }
 
-func AESInECBModeOracle(ct []byte) bool{
+func AESInECBModeOracle(ct []byte) bool {
 	blocks := make(map[string]bool)
-	for i := 0; i < len(ct) - 16; i += 16 {
-		block := string(ct[i:i+16])
+	for i := 0; i < len(ct)-16; i += 16 {
+		block := string(ct[i : i+16])
 		if blocks[block] {
 			return true
 		}
@@ -218,11 +216,3 @@ func AESInECBModeOracle(ct []byte) bool{
 	}
 	return false
 }
-
-
-
-
-
-
-
-
