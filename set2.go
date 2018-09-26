@@ -136,9 +136,11 @@ func DetectAESOrECB() {
 
 func ECBWithUnknownSuffix() func([]byte) []byte {
 
-	unknownPt := "Um9sbGluJyBpbiBteSA1LjAKV2l0aCBteSByYWctdG9wIGRvd24gc28gbXkgYnkK" +
-		"aGFpciBjYW4gYmxvdwpUaGUgZ2lybGllcyBvbiBzdGFuZGJ5IHdhdmluZyBq" +
-		"dXN0IHRvIHNheSBoaQpEaWQgeW91IHN0b3A/IE5vLCBJIGp1c3QgZHJvdmUgYnkK"
+	unknownPt := "Um9sbGluJyBpbiBteSA1LjAKV2l0aCBteSByYWctdG9wIGRvd24gc28gbXkg" +
+	"aGFpciBjYW4gYmxvdwpUaGUgZ2lybGllcyBvbiBzdGFuZGJ5IHdhdmluZyBq" +
+	"dXN0IHRvIHNheSBoaQpEaWQgeW91IHN0b3A/IE5vLCBJIGp1c3QgZHJvdmUg" +
+	"YnkK"
+
 	unknownPtDecoded, _ := base64.StdEncoding.DecodeString(unknownPt)
 
 	key := make([]byte, 16)
@@ -151,79 +153,83 @@ func ECBWithUnknownSuffix() func([]byte) []byte {
 	}
 }
 
+//finds the block size of a block cipher returns the 
+//block size, and the padding for the last block of the ciphertext
+func findBlockSizeAndPadding(encrypter func([]byte)[]byte) (int, int) {
+	var payload []byte
+	startingLength := len(encrypter(payload))
+	currentLength := startingLength
+	for startingLength == currentLength {
+		payload = append(payload, byte('A'))
+		currentLength = len(encrypter(payload))
+	}
+	blockLength := currentLength - startingLength
+	paddingLength := len(payload)
+	return blockLength, paddingLength
+}
+
 func AttackECBSuffix() []byte {
 	encrypter := ECBWithUnknownSuffix()
 	//Discover the block size of the cipher.
-	var payload []byte
-	prev := len(encrypter(payload))
-	current := prev
-	for prev == current {
-		payload = append(payload, byte('A'))
-		prev = current
-		current = len(encrypter(payload))
-	}
-	blockSize := current - prev
 
+	blockSize, paddingLength := findBlockSizeAndPadding(encrypter)
 	//Detect that the function is using ECB
-	payload = make([]byte, blockSize*2, blockSize*2)
+	payload := make([]byte, blockSize*2, blockSize*2)
 	ct := encrypter(payload)
 	if !AESInECBModeOracle(ct) {
 		panic("ECB mode not detected")
 	}
 
 	//Recover the plaintext
-	prevPlaintext := []byte("AAAAAAAAAAAAAAAAA")
-	textLen := len(encrypter([]byte(""))) / 16
-	out := []byte{}
-	for i := 0; i < textLen; i++ {
-		prevPlaintext = recoverIndividualBlock(i, 16, prevPlaintext, encrypter)
-		out = append(out, prevPlaintext...)
-	}
+	payload = make([]byte, 16, 16)
+	plaintext := []byte{}
+	ctLength := len(encrypter([]byte("")))
+	log.Println("paddingLength", paddingLength)
 
-	return out
-}
+	//for blockStart := 0; blockStart < ctLength; blockStart+=blockSize {
+	for blockStart := 0; blockStart < ctLength; blockStart+=blockSize {
+		blockEnd := blockStart + blockSize
+		isLastBlock := blockEnd == ctLength
+		plaintextBlock := []byte("")
 
-func recoverIndividualBlock(blockNumber, blockLen int,
-	prevBlockPlaintext []byte, encrypter func([]byte) []byte) []byte {
+		/* get plaintext for each block */
+		for i := blockStart; i < blockEnd; i++ {
+			payload = payload[1:]
 
-	padding := 1
-
-	bs := blockNumber * blockLen
-	be := bs + blockLen
-	blockStart := prevBlockPlaintext[1:16]
-	foundPlaintext := []byte("")
-	for i := bs; i < be; i++ {
-		blockMap := make(map[string]string)
-		for i := 0; i < 256; i++ {
-			endChar := byte(i)
-			block := append(blockStart, foundPlaintext...)
-			block = append(block, endChar)
-			encryptedBlock := string(encrypter(block)[0:blockLen])
-			blockMap[encryptedBlock] = string(block)
-		}
-		oneShort := encrypter(blockStart)
-		blockPlaintext := []byte(blockMap[string(oneShort[bs:be])])
-		if len(blockPlaintext) == 0 {
-			panic("length is zero...")
-		}
-		foundPlaintext = blockPlaintext[0+len(blockStart) : 16]
-
-		if len(oneShort) == be {
-			l := len(foundPlaintext)
-			if foundPlaintext[l-1] == byte(padding) {
-				padding += 1
-				for j := l - 1; j > l-padding; j-- {
-					foundPlaintext[j] = byte(padding)
+			/* deal with dynamic padding values for the last block */
+			if isLastBlock && len(plaintextBlock) + paddingLength > 16 {
+				paddingVal := len(plaintextBlock) + paddingLength - 15
+				for i := len(plaintextBlock) - 1; i > len(plaintextBlock) - paddingVal; i-- {
+					plaintextBlock[i] = byte(paddingVal)
 				}
 			}
+
+			/* build block map */
+			blockMap := make(map[string]string)
+			for i := 0; i < 256; i++ {
+
+				fullBlock := append(payload, plaintextBlock...)
+				fullBlock = append(fullBlock, byte(i))
+
+				encryptedBlock := string(encrypter(fullBlock)[0:blockSize])
+				blockMap[encryptedBlock] = string(fullBlock)
+			}
+
+			payloadEncrypted := encrypter(payload)[blockStart:blockEnd]
+			foundPlaintext := blockMap[string(payloadEncrypted)]
+			lastByte := foundPlaintext[15]
+			log.Println(payload, plaintextBlock)
+			plaintextBlock = append(plaintextBlock, lastByte)
 		}
 
-		if len(blockStart) > 0 {
-			blockStart = blockStart[1:]
-		}
+		payload = plaintextBlock
+		plaintext = append(plaintext, plaintextBlock...)
 	}
-	return foundPlaintext
+
+	return plaintext
 }
+
+
 
 func profileFor(email string) string {
 	email = strings.Replace(email, "&", "", -1)
@@ -248,117 +254,3 @@ func initProfileFunctions() (func([]byte) []byte, func([]byte)) {
 	}
 	return encrypt, decrypt
 }
-
-func ECBWithUnknownSuffixandPrefix() func([]byte) []byte {
-	unknownPt := "Um9sbGluJyBpbiBteSA1LjAKV2l0aCBteSByYWctdG9wIGRvd24gc28gbXkgYnkK" +
-		"aGFpciBjYW4gYmxvdwpUaGUgZ2lybGllcyBvbiBzdGFuZGJ5IHdhdmluZyBq" +
-		"dXN0IHRvIHNheSBoaQpEaWQgeW91IHN0b3A/IE5vLCBJIGp1c3QgZHJvdmUgYnkK"
-	unknownPtDecoded, _ := base64.StdEncoding.DecodeString(unknownPt)
-
-	randomCount := rand.Int31n(100) + 32
-	prefix := make([]byte, randomCount)
-	rand.Read(prefix)
-
-	key := make([]byte, 16)
-	rand.Read(key)
-
-	return func(pt []byte) []byte {
-		pt = append(pt, []byte(unknownPtDecoded)...)
-		pt = append(prefix, pt...)
-		pt = Pad(pt, 16)
-		return AESInECBModeEncrypt(pt, key)
-	}
-}
-
-//needs a bit more work
-/*func AttackECBSuffixAndPrefix() []byte{
-	encrypter := ECBWithUnknownSuffixandPrefix()
-	//Discover the block size of the cipher.
-	var payload []byte
-	prev := len(encrypter(payload))
-	current := prev
-	for prev == current {
-		payload = append(payload, byte('A'))
-		prev = current
-		current = len(encrypter(payload))
-	}
-	blockSize := current - prev
-
-	//Detect that the function is using ECB
-	payload = make([]byte, blockSize * 3, blockSize * 3)
-	ct := encrypter(payload)
-	if !AESInECBModeOracle(ct) {
-		panic("ECB mode not detected")
-	}
-
-	blocks := BreakIntoBlocks(ct, blockSize)
-	previous := []byte{}
-	startBlock := 0
-
-	for i := 0; i < len(blocks); i++ {
-		if string(previous) == string(blocks[i]) {
-			startBlock = i
-			break
-		}
-		previous = blocks[i]
-	}
-
-	//Recover the plaintext
-	prevPlaintext := []byte("AAAAAAAAAAAAAAAAA")
-	textLen := len(encrypter([]byte(""))) / 16
-	out := []byte{}
-	for i:=startBlock; i < textLen; i++ {
-
-		prevPlaintext = recoverIndividualBlock2(i, 16, prevPlaintext,
-		encrypter, startBlock)
-
-		out = append(out, prevPlaintext...)
-	}
-
-	return out
-}
-
-func recoverIndividualBlock2(blockNumber, blockLen int,
-	prevBlockPlaintext []byte, encrypter func([]byte) []byte, start int) []byte {
-
-	padding := 1
-
-	bs := blockNumber * blockLen
-	be := bs + blockLen
-	blockStart := prevBlockPlaintext[1:16]
-	foundPlaintext := []byte("")
-	for i:=bs; i<be; i++ {
-		blockMap := make(map[string]string)
-		for i := 0; i < 256; i++ {
-			endChar := byte(i)
-			block := append(blockStart, foundPlaintext...)
-			block = append(block, endChar)
-			encryptedBlock := string(encrypter(block)[start * 16:start * 16 + 16])
-			blockMap[encryptedBlock] = string(block)
-		}
-		oneShort := encrypter(blockStart)
-		blockPlaintext := []byte(blockMap[string(oneShort[bs:be])])
-		if len(blockPlaintext) == 0 {
-			panic("length is zero...")
-		}
-		foundPlaintext = blockPlaintext[0 + len(blockStart):16]
-
-			if len(oneShort) == be {
-				l := len(foundPlaintext)
-				if foundPlaintext[l - 1] == byte(padding) {
-					log.Println("here")
-					padding += 1
-					for j:= l - 1; j > l - padding; j-- {
-						foundPlaintext[j] = byte(padding)
-					}
-				}
-			}
-
-		if len(blockStart) > 0 {
-			blockStart = blockStart[1:]
-		}
-	}
-	return foundPlaintext
-}
-
-*/
