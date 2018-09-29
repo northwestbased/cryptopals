@@ -6,6 +6,7 @@ import (
 	"log"
 	"math/rand"
 	"strings"
+	"reflect"
 )
 
 //Implements PKS#7 padding
@@ -184,7 +185,6 @@ func AttackECBSuffix() []byte {
 	payload = make([]byte, 16, 16)
 	plaintext := []byte{}
 	ctLength := len(encrypter([]byte("")))
-	log.Println("paddingLength", paddingLength)
 
 	//for blockStart := 0; blockStart < ctLength; blockStart+=blockSize {
 	for blockStart := 0; blockStart < ctLength; blockStart+=blockSize {
@@ -218,7 +218,6 @@ func AttackECBSuffix() []byte {
 			payloadEncrypted := encrypter(payload)[blockStart:blockEnd]
 			foundPlaintext := blockMap[string(payloadEncrypted)]
 			lastByte := foundPlaintext[15]
-			log.Println(payload, plaintextBlock)
 			plaintextBlock = append(plaintextBlock, lastByte)
 		}
 
@@ -254,3 +253,112 @@ func initProfileFunctions() (func([]byte) []byte, func([]byte)) {
 	}
 	return encrypt, decrypt
 }
+
+func ECBWithUnknownSuffixAndPrefix() func ([]byte) []byte {
+	unknownPt := "Um9sbGluJyBpbiBteSA1LjAKV2l0aCBteSByYWctdG9wIGRvd24gc28gbXkg" +
+	"aGFpciBjYW4gYmxvdwpUaGUgZ2lybGllcyBvbiBzdGFuZGJ5IHdhdmluZyBq" +
+	"dXN0IHRvIHNheSBoaQpEaWQgeW91IHN0b3A/IE5vLCBJIGp1c3QgZHJvdmUg" +
+	"YnkK"
+	unknownPtDecoded, _ := base64.StdEncoding.DecodeString(unknownPt)
+
+	randomCount := rand.Int31n(100) + 32
+	prefix := make([]byte, randomCount)
+	rand.Read(prefix)
+
+	key := make([]byte, 16)
+	rand.Read(key)
+
+	return func(pt []byte) []byte {
+		pt = append(pt, []byte(unknownPtDecoded)...)
+		pt = append(prefix, pt...)
+		pt = Pad(pt, 16)
+		return AESInECBModeEncrypt(pt, key)
+	}
+}
+
+
+
+func AttackECBSuffixWithPrefix() []byte {
+	encrypter := ECBWithUnknownSuffixAndPrefix()
+	//Discover the block size of the cipher.
+
+	blockSize, paddingLength := findBlockSizeAndPadding(encrypter)
+	//Detect that the function is using ECB
+	payload := make([]byte, blockSize*3, blockSize*3)
+	ct := encrypter(payload)
+	if !AESInECBModeOracle(ct) {
+		panic("ECB mode not detected")
+	}
+
+	offsetLength := 0
+	for !AESInECBModeOracle(encrypter(make([]byte, offsetLength))) {
+		offsetLength += 1
+	}
+	offsetLength = offsetLength % blockSize
+
+
+
+	offset := make([]byte,offsetLength)
+	log.Println("offsetlen", offsetLength)
+
+	ct = encrypter(make([]byte, blockSize * 2 + offsetLength))
+	blocks := BreakIntoBlocks(ct, blockSize)
+	ourStart := 0
+	for i := 0; i < len(blocks) - 1; i++ {
+		if reflect.DeepEqual(blocks[i], blocks[i+1]) {
+			ourStart = i * 16
+			break
+		}
+	}
+	log.Println("ourStart", ourStart)
+
+	paddingLength -= offsetLength
+
+	//Recover the plaintext
+	payload = make([]byte, 16, 16)
+	plaintext := []byte{}
+	ctLength := len(encrypter([]byte("")))
+
+
+	for blockStart := ourStart; blockStart < ctLength; blockStart+=blockSize {
+		blockEnd := blockStart + blockSize
+		isLastBlock := blockEnd == ctLength
+		plaintextBlock := []byte("")
+
+		/* get plaintext for each block */
+		for i := blockStart; i < blockEnd; i++ {
+			payload = payload[1:]
+
+			/* deal with dynamic padding values for the last block */
+			if isLastBlock && len(plaintextBlock) + paddingLength > 16 {
+				paddingVal := len(plaintextBlock) + paddingLength - 15
+				for i := len(plaintextBlock) - 1; i > len(plaintextBlock) - paddingVal; i-- {
+					plaintextBlock[i] = byte(paddingVal)
+				}
+			}
+
+			/* build block map */
+			blockMap := make(map[string]string)
+			for i := 0; i < 256; i++ {
+
+				fullBlock := append(payload, plaintextBlock...)
+				fullBlock = append(fullBlock, byte(i))
+
+				encryptedBlock := string(encrypter(append(offset, fullBlock...))[ourStart:ourStart+blockSize])
+				blockMap[encryptedBlock] = string(fullBlock)
+			}
+
+			payloadEncrypted := encrypter(append(offset, payload...))[blockStart:blockEnd]
+			foundPlaintext := blockMap[string(payloadEncrypted)]
+			lastByte := foundPlaintext[15]
+			plaintextBlock = append(plaintextBlock, lastByte)
+		}
+
+		payload = plaintextBlock
+		log.Println(string(plaintextBlock))
+		plaintext = append(plaintext, plaintextBlock...)
+	}
+
+	return plaintext
+}
+

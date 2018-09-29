@@ -61,3 +61,9 @@ func Test_13(t *testing.T) {
 	adminBlock := encrypt([]byte(profileFor("aaaaaaaaaaadmin")))[16:32]
 	decrypt(append(firstTwoBlocks, adminBlock...))
 }
+
+func Test_14(t *testing.T) {
+	log.Println("\n\n\nProblem 14 Output:")
+	out := AttackECBSuffixWithPrefix()
+	log.Println(string(out))
+}
