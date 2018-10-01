@@ -67,3 +67,16 @@ func Test_14(t *testing.T) {
 	out := AttackECBSuffixWithPrefix()
 	log.Println(string(out))
 }
+
+func Test_15(t *testing.T) {
+	if string(StripPadding([]byte("ICE ICE BABY\x04\x04\x04\x04"))) != "ICE ICE BABY" {
+		t.Error("didn't work")
+	}
+	//if string(StripPadding([]byte("ICE ICE BABY\x05\x05\x05\x05"))) != "ICE ICE BABY" {
+		//t.Error("didn't work")
+	//}
+}
+
+func Test_16(t *testing.T) {
+	log.Println("16", createAdmin())
+}

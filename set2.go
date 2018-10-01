@@ -4,7 +4,7 @@ import (
 	"crypto/aes"
 	"encoding/base64"
 	"log"
-	"math/rand"
+	"crypto/rand"
 	"strings"
 	"reflect"
 )
@@ -98,10 +98,10 @@ func AESInECBModeEncrypt(ct, key []byte) []byte {
 }
 
 func CBCOrECBEncrypt(pt []byte) []byte {
-	doECB := rand.Int31n(2) == 1
+	doECB := GetRandomInt(2) == 1
 
-	prefixByteLength := rand.Int31n(5) + 5
-	postfixByteLength := rand.Int31n(5) + 5
+	prefixByteLength := GetRandomInt(5) + 5
+	postfixByteLength := GetRandomInt(5) + 5
 
 	prefixBytes := make([]byte, prefixByteLength)
 	postfixBytes := make([]byte, postfixByteLength)
@@ -261,7 +261,7 @@ func ECBWithUnknownSuffixAndPrefix() func ([]byte) []byte {
 	"YnkK"
 	unknownPtDecoded, _ := base64.StdEncoding.DecodeString(unknownPt)
 
-	randomCount := rand.Int31n(100) + 32
+	randomCount := GetRandomInt(100) + 32
 	prefix := make([]byte, randomCount)
 	rand.Read(prefix)
 
@@ -275,8 +275,6 @@ func ECBWithUnknownSuffixAndPrefix() func ([]byte) []byte {
 		return AESInECBModeEncrypt(pt, key)
 	}
 }
-
-
 
 func AttackECBSuffixWithPrefix() []byte {
 	encrypter := ECBWithUnknownSuffixAndPrefix()
@@ -355,10 +353,79 @@ func AttackECBSuffixWithPrefix() []byte {
 		}
 
 		payload = plaintextBlock
-		log.Println(string(plaintextBlock))
 		plaintext = append(plaintext, plaintextBlock...)
 	}
 
 	return plaintext
 }
 
+func StripPadding (b []byte) []byte {
+	length := len(b)
+	lastByte := b[length - 1]
+	paddingLen := int(lastByte)
+	if paddingLen > length {
+		panic("invalid padding!")
+	}
+	for i := 0; i < paddingLen; i++ {
+		index := length - i - 1
+		if b[index] != lastByte {
+			panic("invalid padding!")
+		}
+	}
+	return b[:length - paddingLen]
+}
+
+
+func initCommentEncryption() (func([]byte) []byte, func([]byte) bool) {
+	adminString := ";admin=true;"
+
+	key := make([]byte, 16)
+	rand.Read(key)
+	iv := make([]byte, 16)
+	rand.Read(iv)
+
+	encryptComment := func(comment []byte) []byte{
+		prependText := []byte("comment1=cooking%20MCs;userdata=")
+		appendText := []byte(";comment2=%20like%20a%20pound%20of%20bacon")
+		for i := 0; i < len(comment); i++ {
+			if comment[i] == ';' || comment[i] == '='{
+				ch := comment[i]
+				replacedText := []byte{'"', ch, '"'}
+
+				before := make([]byte, len(comment[:i]))
+				after := make([]byte, len(comment[i+1:]))
+
+				copy(before, comment[:i])
+				copy(after, comment[i+1:])
+
+				comment = append(before, replacedText...)
+				comment = append(comment, after...)
+
+				i += 2
+			}
+		}
+		comment = append(comment, appendText...)
+		comment = append(prependText, comment...)
+		log.Println(string(comment))
+		comment = Pad(comment, 16)
+		return AESInCBCModeEncrypt(comment, key, iv)
+	}
+	decryptAndCheckAdmin := func(ct []byte) bool{
+		plaintext := AESInCBCModeDecrypt(ct, key, iv)
+		if strings.Contains(string(plaintext), adminString) {
+			return true
+		}
+		return false
+	}
+	return encryptComment, decryptAndCheckAdmin
+}
+
+func createAdmin() bool {
+	encrypter, checkAdmin := initCommentEncryption()
+	payload := []byte(":admin<true")
+	ct := encrypter(payload)
+	ct[16] ^= 1
+	ct[22] ^= 1
+
+	return checkAdmin(ct)
+}

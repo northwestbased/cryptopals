@@ -3,6 +3,8 @@ package cryptopals
 import (
 	"bufio"
 	"os"
+	"crypto/rand"
+	"math/big"
 )
 
 func ReadFileByLine(filename string) ([]string, error) {
@@ -43,3 +45,9 @@ func Flatten(blocks [][]byte) []byte {
 	}
 	return out
 }
+
+func GetRandomInt(max int) int {
+	nBig, _ := rand.Int(rand.Reader, big.NewInt(int64(max)))
+	return int(nBig.Int64())
+}
+
