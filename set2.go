@@ -3,20 +3,25 @@ package cryptopals
 import (
 	"crypto/aes"
 	"encoding/base64"
+	"errors"
 	"log"
-	"crypto/rand"
-	"strings"
 	"reflect"
+	"strings"
 )
 
-//Implements PKS#7 padding
-func Pad(pt []byte, blockLength int) []byte {
-	neededBytes := blockLength - (len(pt) % blockLength)
-	if neededBytes == 0 {
-		neededBytes = len(pt)
+//Pad implements PKS#7 padding. It returns a padded version of pt
+//based on blockSize.
+func Pad(pt []byte, blockSize int) []byte {
+	paddingLength := blockSize - (len(pt) % blockSize)
+	//if the last block doesn't need any padding,
+	//create a block that only contains padding
+	//bytes
+	if paddingLength == 0 {
+		paddingLength = blockSize
 	}
-	for i := 0; i < neededBytes; i++ {
-		pt = append(pt, byte(neededBytes))
+
+	for i := 0; i < paddingLength; i++ {
+		pt = append(pt, byte(paddingLength))
 	}
 	return pt
 }
@@ -27,8 +32,8 @@ func AESInCBCModeEncrypt(pt, key, iv []byte) []byte {
 		panic(err)
 	}
 
-	bs := cipher.BlockSize()
-	dst := make([]byte, 16, 16)
+	bs := cipher.BlockSize() //should always return 16
+	dst := make([]byte, bs)
 
 	var out []byte
 
@@ -37,9 +42,10 @@ func AESInCBCModeEncrypt(pt, key, iv []byte) []byte {
 	for i := 0; i < len(blocks); i++ {
 		block := blocks[i]
 		if i > 0 {
-			block, _ = XOrBuffers(block, out[bs*(i-1):bs*i])
+			prevBlock := out[bs*(i-1) : bs*i]
+			block = XOr(block, prevBlock)
 		} else {
-			block, _ = XOrBuffers(block, iv)
+			block = XOr(block, iv)
 		}
 		cipher.Encrypt(dst, block)
 		out = append(out, dst...)
@@ -54,7 +60,7 @@ func AESInCBCModeDecrypt(ct, key, iv []byte) []byte {
 	}
 
 	bs := cipher.BlockSize()
-	dst := make([]byte, 16, 16)
+	dst := make([]byte, bs)
 
 	var out []byte
 
@@ -66,9 +72,9 @@ func AESInCBCModeDecrypt(ct, key, iv []byte) []byte {
 		cipher.Decrypt(dst, block)
 
 		if i > 0 {
-			pt, _ = XOrBuffers(dst, blocks[i-1])
+			pt = XOr(dst, blocks[i-1])
 		} else {
-			pt, _ = XOrBuffers(dst, iv)
+			pt = XOr(dst, iv)
 		}
 		out = append(out, pt...)
 	}
@@ -76,7 +82,6 @@ func AESInCBCModeDecrypt(ct, key, iv []byte) []byte {
 	return out
 }
 
-//encryption function
 func AESInECBModeEncrypt(ct, key []byte) []byte {
 	cipher, err := aes.NewCipher(key)
 	if err != nil {
@@ -86,7 +91,7 @@ func AESInECBModeEncrypt(ct, key []byte) []byte {
 	if len(ct)%bs != 0 {
 		panic("Ciphertext length needs to be a multiple of the blocksize")
 	}
-	dst := make([]byte, 16, 16)
+	dst := make([]byte, bs)
 	var out []byte
 
 	for i := 0; i < len(ct); i += bs {
@@ -103,13 +108,10 @@ func CBCOrECBEncrypt(pt []byte) []byte {
 	prefixByteLength := GetRandomInt(5) + 5
 	postfixByteLength := GetRandomInt(5) + 5
 
-	prefixBytes := make([]byte, prefixByteLength)
-	postfixBytes := make([]byte, postfixByteLength)
-	key := make([]byte, 16)
+	prefixBytes := Key(prefixByteLength)
+	postfixBytes := Key(postfixByteLength)
+	key := Key(16)
 
-	rand.Read(postfixBytes)
-	rand.Read(prefixBytes)
-	rand.Read(key)
 	pt = append(prefixBytes, pt...)
 	pt = append(pt, postfixBytes...)
 
@@ -119,8 +121,7 @@ func CBCOrECBEncrypt(pt []byte) []byte {
 		return AESInECBModeEncrypt(pt, key[:])
 	} else {
 		log.Println("Encrypting with CBC mode...")
-		iv := make([]byte, 16)
-		rand.Read(iv)
+		iv := Key(16)
 		return AESInCBCModeEncrypt(pt, key[:], iv[:])
 	}
 }
@@ -137,26 +138,27 @@ func DetectAESOrECB() {
 
 func ECBWithUnknownSuffix() func([]byte) []byte {
 
-	unknownPt := "Um9sbGluJyBpbiBteSA1LjAKV2l0aCBteSByYWctdG9wIGRvd24gc28gbXkg" +
-	"aGFpciBjYW4gYmxvdwpUaGUgZ2lybGllcyBvbiBzdGFuZGJ5IHdhdmluZyBq" +
-	"dXN0IHRvIHNheSBoaQpEaWQgeW91IHN0b3A/IE5vLCBJIGp1c3QgZHJvdmUg" +
-	"YnkK"
+	unknownB64 := "Um9sbGluJyBpbiBteSA1LjAKV2l0aCBteSByYWctdG9wIGRvd24gc28gbXkg" +
+		"aGFpciBjYW4gYmxvdwpUaGUgZ2lybGllcyBvbiBzdGFuZGJ5IHdhdmluZyBq" +
+		"dXN0IHRvIHNheSBoaQpEaWQgeW91IHN0b3A/IE5vLCBJIGp1c3QgZHJvdmUgYnkK"
 
-	unknownPtDecoded, _ := base64.StdEncoding.DecodeString(unknownPt)
+	unknown, err := base64.StdEncoding.DecodeString(unknownB64)
+	if err != nil {
+		panic(err)
+	}
 
-	key := make([]byte, 16)
-	rand.Read(key)
+	key := Key(16)
 
 	return func(pt []byte) []byte {
-		pt = append(pt, []byte(unknownPtDecoded)...)
+		pt = append(pt, []byte(unknown)...)
 		pt = Pad(pt, 16)
 		return AESInECBModeEncrypt(pt, key)
 	}
 }
 
-//finds the block size of a block cipher returns the 
-//block size, and the padding for the last block of the ciphertext
-func findBlockSizeAndPadding(encrypter func([]byte)[]byte) (int, int) {
+//finds the block size of a block cipher. returns the
+//block size and the original padding for the last block of the ciphertext
+func findBlockSizeAndPadding(encrypter func([]byte) []byte) (int, int) {
 	var payload []byte
 	startingLength := len(encrypter(payload))
 	currentLength := startingLength
@@ -164,11 +166,12 @@ func findBlockSizeAndPadding(encrypter func([]byte)[]byte) (int, int) {
 		payload = append(payload, byte('A'))
 		currentLength = len(encrypter(payload))
 	}
-	blockLength := currentLength - startingLength
+	blockSize := currentLength - startingLength
 	paddingLength := len(payload)
-	return blockLength, paddingLength
+	return blockSize, paddingLength
 }
 
+//admittedly, this function is a bit messy...
 func AttackECBSuffix() []byte {
 	encrypter := ECBWithUnknownSuffix()
 	//Discover the block size of the cipher.
@@ -183,24 +186,24 @@ func AttackECBSuffix() []byte {
 
 	//Recover the plaintext
 	payload = make([]byte, 16, 16)
-	plaintext := []byte{}
+	pt := []byte{}
 	ctLength := len(encrypter([]byte("")))
 
 	//for blockStart := 0; blockStart < ctLength; blockStart+=blockSize {
-	for blockStart := 0; blockStart < ctLength; blockStart+=blockSize {
+	for blockStart := 0; blockStart < ctLength; blockStart += blockSize {
 		blockEnd := blockStart + blockSize
 		isLastBlock := blockEnd == ctLength
-		plaintextBlock := []byte("")
+		ptBlock := []byte("")
 
 		/* get plaintext for each block */
 		for i := blockStart; i < blockEnd; i++ {
 			payload = payload[1:]
 
 			/* deal with dynamic padding values for the last block */
-			if isLastBlock && len(plaintextBlock) + paddingLength > 16 {
-				paddingVal := len(plaintextBlock) + paddingLength - 15
-				for i := len(plaintextBlock) - 1; i > len(plaintextBlock) - paddingVal; i-- {
-					plaintextBlock[i] = byte(paddingVal)
+			if isLastBlock && len(ptBlock)+paddingLength > 16 {
+				paddingVal := len(ptBlock) + paddingLength - 15
+				for i := len(ptBlock) - 1; i > len(ptBlock)-paddingVal; i-- {
+					ptBlock[i] = byte(paddingVal)
 				}
 			}
 
@@ -208,7 +211,7 @@ func AttackECBSuffix() []byte {
 			blockMap := make(map[string]string)
 			for i := 0; i < 256; i++ {
 
-				fullBlock := append(payload, plaintextBlock...)
+				fullBlock := append(payload, ptBlock...)
 				fullBlock = append(fullBlock, byte(i))
 
 				encryptedBlock := string(encrypter(fullBlock)[0:blockSize])
@@ -218,17 +221,15 @@ func AttackECBSuffix() []byte {
 			payloadEncrypted := encrypter(payload)[blockStart:blockEnd]
 			foundPlaintext := blockMap[string(payloadEncrypted)]
 			lastByte := foundPlaintext[15]
-			plaintextBlock = append(plaintextBlock, lastByte)
+			ptBlock = append(ptBlock, lastByte)
 		}
 
-		payload = plaintextBlock
-		plaintext = append(plaintext, plaintextBlock...)
+		payload = ptBlock
+		pt = append(pt, ptBlock...)
 	}
 
-	return plaintext
+	return pt
 }
-
-
 
 func profileFor(email string) string {
 	email = strings.Replace(email, "&", "", -1)
@@ -236,46 +237,61 @@ func profileFor(email string) string {
 	return "email=" + email + "&uid=10&role=user"
 }
 
-func initProfileFunctions() (func([]byte) []byte, func([]byte)) {
-	key := make([]byte, 16)
-	rand.Read(key)
+func initProfileEncryption() (func([]byte) []byte, func([]byte) bool) {
+	key := Key(16)
 	encrypt := func(profile []byte) []byte {
 		profile = Pad(profile, 16)
 		return AESInECBModeEncrypt(profile, key)
 	}
-	decrypt := func(profile []byte) {
-		decodedProfile := AESInECBMode(profile, key)
+	isAdmin := func(profile []byte) bool {
+		decodedProfile := AESInECBModeDecrypt(profile, key)
 		pairs := strings.Split(string(decodedProfile), "&")
 		for _, p := range pairs {
 			k := strings.Split(p, "=")
-			log.Println(k)
+			if k[0] == "role" && k[1] == "admin" {
+				return true
+			}
 		}
+		return false
 	}
-	return encrypt, decrypt
+	return encrypt, isAdmin
 }
 
-func ECBWithUnknownSuffixAndPrefix() func ([]byte) []byte {
-	unknownPt := "Um9sbGluJyBpbiBteSA1LjAKV2l0aCBteSByYWctdG9wIGRvd24gc28gbXkg" +
-	"aGFpciBjYW4gYmxvdwpUaGUgZ2lybGllcyBvbiBzdGFuZGJ5IHdhdmluZyBq" +
-	"dXN0IHRvIHNheSBoaQpEaWQgeW91IHN0b3A/IE5vLCBJIGp1c3QgZHJvdmUg" +
-	"YnkK"
-	unknownPtDecoded, _ := base64.StdEncoding.DecodeString(unknownPt)
+func createAdminProfile() bool {
+	encrypt, isAdmin := initProfileEncryption()
+	p := profileFor("aaaaaaaaaaaaa")
+	a := encrypt([]byte(p))
+	firstTwoBlocks := a[:32]
+	adminBlock := encrypt([]byte(profileFor("aaaaaaaaaaadmin")))[16:32]
+	payload := append(firstTwoBlocks, adminBlock...)
+	return isAdmin(payload)
+}
 
-	randomCount := GetRandomInt(100) + 32
-	prefix := make([]byte, randomCount)
-	rand.Read(prefix)
 
-	key := make([]byte, 16)
-	rand.Read(key)
+func ECBWithUnknownSuffixAndPrefix() func([]byte) []byte {
+	b64Plaintext := "Um9sbGluJyBpbiBteSA1LjAKV2l0aCBteSByYWctdG9wIGRvd24gc28gbXkg" +
+		"aGFpciBjYW4gYmxvdwpUaGUgZ2lybGllcyBvbiBzdGFuZGJ5IHdhdmluZyBq" +
+		"dXN0IHRvIHNheSBoaQpEaWQgeW91IHN0b3A/IE5vLCBJIGp1c3QgZHJvdmUg" +
+		"YnkK"
+	unknown, err := base64.StdEncoding.DecodeString(b64Plaintext)
+	if err != nil {
+		panic("base64 decode failed")
+	}
+
+	prefixLength := GetRandomInt(100) + 32
+	prefix := Key(prefixLength)
+	key := Key(16)
 
 	return func(pt []byte) []byte {
-		pt = append(pt, []byte(unknownPtDecoded)...)
+		pt = append(pt, []byte(unknown)...)
 		pt = append(prefix, pt...)
 		pt = Pad(pt, 16)
 		return AESInECBModeEncrypt(pt, key)
 	}
 }
 
+
+//admittedly, this function is a bit messy...
 func AttackECBSuffixWithPrefix() []byte {
 	encrypter := ECBWithUnknownSuffixAndPrefix()
 	//Discover the block size of the cipher.
@@ -294,15 +310,13 @@ func AttackECBSuffixWithPrefix() []byte {
 	}
 	offsetLength = offsetLength % blockSize
 
-
-
-	offset := make([]byte,offsetLength)
+	offset := make([]byte, offsetLength)
 	log.Println("offsetlen", offsetLength)
 
-	ct = encrypter(make([]byte, blockSize * 2 + offsetLength))
+	ct = encrypter(make([]byte, blockSize*2+offsetLength))
 	blocks := BreakIntoBlocks(ct, blockSize)
 	ourStart := 0
-	for i := 0; i < len(blocks) - 1; i++ {
+	for i := 0; i < len(blocks)-1; i++ {
 		if reflect.DeepEqual(blocks[i], blocks[i+1]) {
 			ourStart = i * 16
 			break
@@ -314,24 +328,23 @@ func AttackECBSuffixWithPrefix() []byte {
 
 	//Recover the plaintext
 	payload = make([]byte, 16, 16)
-	plaintext := []byte{}
+	pt := []byte{}
 	ctLength := len(encrypter([]byte("")))
 
-
-	for blockStart := ourStart; blockStart < ctLength; blockStart+=blockSize {
+	for blockStart := ourStart; blockStart < ctLength; blockStart += blockSize {
 		blockEnd := blockStart + blockSize
 		isLastBlock := blockEnd == ctLength
-		plaintextBlock := []byte("")
+		ptBlock := []byte("")
 
 		/* get plaintext for each block */
 		for i := blockStart; i < blockEnd; i++ {
 			payload = payload[1:]
 
 			/* deal with dynamic padding values for the last block */
-			if isLastBlock && len(plaintextBlock) + paddingLength > 16 {
-				paddingVal := len(plaintextBlock) + paddingLength - 15
-				for i := len(plaintextBlock) - 1; i > len(plaintextBlock) - paddingVal; i-- {
-					plaintextBlock[i] = byte(paddingVal)
+			if isLastBlock && len(ptBlock)+paddingLength > 16 {
+				paddingVal := len(ptBlock) + paddingLength - 15
+				for i := len(ptBlock) - 1; i > len(ptBlock)-paddingVal; i-- {
+					ptBlock[i] = byte(paddingVal)
 				}
 			}
 
@@ -339,56 +352,56 @@ func AttackECBSuffixWithPrefix() []byte {
 			blockMap := make(map[string]string)
 			for i := 0; i < 256; i++ {
 
-				fullBlock := append(payload, plaintextBlock...)
+				fullBlock := append(payload, ptBlock...)
 				fullBlock = append(fullBlock, byte(i))
 
-				encryptedBlock := string(encrypter(append(offset, fullBlock...))[ourStart:ourStart+blockSize])
+				encryptedBlock := string(encrypter(append(offset, fullBlock...))[ourStart : ourStart+blockSize])
 				blockMap[encryptedBlock] = string(fullBlock)
 			}
 
 			payloadEncrypted := encrypter(append(offset, payload...))[blockStart:blockEnd]
 			foundPlaintext := blockMap[string(payloadEncrypted)]
 			lastByte := foundPlaintext[15]
-			plaintextBlock = append(plaintextBlock, lastByte)
+			ptBlock = append(ptBlock, lastByte)
 		}
 
-		payload = plaintextBlock
-		plaintext = append(plaintext, plaintextBlock...)
+		payload = ptBlock
+		pt = append(pt, ptBlock...)
 	}
 
-	return plaintext
+	return pt
 }
 
-func StripPadding (b []byte) []byte {
+//StripPadding calculates and removes PKCS#7 padding,
+//and either returning the input without padding, or returning
+//an error if there is no valid padding.
+func StripPadding(b []byte) ([]byte, error) {
 	length := len(b)
-	lastByte := b[length - 1]
+	lastByte := b[length-1]
 	paddingLen := int(lastByte)
-	if paddingLen > length {
-		panic("invalid padding!")
+	if paddingLen > length || paddingLen == 0 {
+		return nil, errors.New("invalid padding!")
 	}
 	for i := 0; i < paddingLen; i++ {
 		index := length - i - 1
 		if b[index] != lastByte {
-			panic("invalid padding!")
+			return nil, errors.New("invalid padding!")
 		}
 	}
-	return b[:length - paddingLen]
+	return b[:length-paddingLen], nil
 }
-
 
 func initCommentEncryption() (func([]byte) []byte, func([]byte) bool) {
 	adminString := ";admin=true;"
 
-	key := make([]byte, 16)
-	rand.Read(key)
-	iv := make([]byte, 16)
-	rand.Read(iv)
+	key := Key(16)
+	iv := Key(16)
 
-	encryptComment := func(comment []byte) []byte{
+	encryptComment := func(comment []byte) []byte {
 		prependText := []byte("comment1=cooking%20MCs;userdata=")
 		appendText := []byte(";comment2=%20like%20a%20pound%20of%20bacon")
 		for i := 0; i < len(comment); i++ {
-			if comment[i] == ';' || comment[i] == '='{
+			if comment[i] == ';' || comment[i] == '=' {
 				ch := comment[i]
 				replacedText := []byte{'"', ch, '"'}
 
@@ -410,9 +423,9 @@ func initCommentEncryption() (func([]byte) []byte, func([]byte) bool) {
 		comment = Pad(comment, 16)
 		return AESInCBCModeEncrypt(comment, key, iv)
 	}
-	decryptAndCheckAdmin := func(ct []byte) bool{
-		plaintext := AESInCBCModeDecrypt(ct, key, iv)
-		if strings.Contains(string(plaintext), adminString) {
+	decryptAndCheckAdmin := func(ct []byte) bool {
+		pt := AESInCBCModeDecrypt(ct, key, iv)
+		if strings.Contains(string(pt), adminString) {
 			return true
 		}
 		return false
@@ -420,10 +433,12 @@ func initCommentEncryption() (func([]byte) []byte, func([]byte) bool) {
 	return encryptComment, decryptAndCheckAdmin
 }
 
-func createAdmin() bool {
-	encrypter, checkAdmin := initCommentEncryption()
+func createBitflippedAdmin() bool {
+	encryptComment, checkAdmin := initCommentEncryption()
 	payload := []byte(":admin<true")
-	ct := encrypter(payload)
+	ct := encryptComment(payload)
+	//flip some bits - changes ':' and '<' characters to ';' and '='
+	//in the plaintext
 	ct[16] ^= 1
 	ct[22] ^= 1
 

@@ -4,7 +4,6 @@ import (
 	"crypto/aes"
 	"encoding/base64"
 	"encoding/hex"
-	"errors"
 	"math"
 	"unicode"
 )
@@ -18,30 +17,30 @@ func HexToBase64(hexStr string) (string, error) {
 	return base64.StdEncoding.EncodeToString(bytes), nil
 }
 
-func XOrBuffers(b1, b2 []byte) ([]byte, error) {
+func XOr(b1, b2 []byte) []byte {
 	if len(b1) != len(b2) {
-		return []byte{}, errors.New("buffers are not the same length")
+		panic("buffers are not the same length")
 	}
 
-	output := make([]byte, len(b1), len(b1))
+	out := make([]byte, len(b1))
 	for i := 0; i < len(b1); i++ {
-		output[i] = b1[i] ^ b2[i]
+		out[i] = b1[i] ^ b2[i]
 	}
-	return output, nil
+	return out
 }
 
 /*
-	Single Byte XOr Cypher
-	Each byte in the plaintext is XOr'd against a single character.
-	Encryption is identical to decryption.
-	This is just a special case of ReapeatingKeyXOr
+Single Byte XOr Cypher
+Each byte in the plaintext is XOr'd against a single character.
+Encryption is identical to decryption.
+This is just a special case of ReapeatingKeyXOr
 */
 func SingleByteXOrCipher(text []byte, key byte) []byte {
 	return RepeatingKeyXOrCipher(text, []byte{key})
 }
 
 func RepeatingKeyXOrCipher(text, key []byte) []byte {
-	output := make([]byte, len(text), len(text))
+	output := make([]byte, len(text))
 	for i, b := range text {
 		output[i] = b ^ key[i%len(key)]
 	}
@@ -49,14 +48,15 @@ func RepeatingKeyXOrCipher(text, key []byte) []byte {
 }
 
 /*
-	BreakSingleByteXOr Uses English letter frequencies to find the most
-	likely key for a given ciphertext, presuming that the ciphertext was
-	encrypted using the Single Byte XOr Cypher. This function returns a
-	the key, plaintext, and the difference between the average letter
-	distribution for English and the plaintext.
+BreakSingleByteXOrCipher Uses English letter frequencies to find the most
+likely key for a given ciphertext, presuming that the ciphertext was
+encrypted using the Single Byte XOr Cypher. This function returns a
+the key, plaintext, and the difference between the average letter
+distribution for English and the plaintext.
 */
-func BreakSingleByteXOr(ct []byte) (byte, []byte, float64) {
-	letterFrequency := map[byte]float64{
+func BreakSingleByteXOrCipher(ciphertext []byte) (byte, []byte, float64) {
+	//English letter frequency, including the space character
+	englishFrequency := map[byte]float64{
 		' ': 0.182884,
 		'E': 0.102666,
 		'T': 0.075169,
@@ -85,46 +85,45 @@ func BreakSingleByteXOr(ct []byte) (byte, []byte, float64) {
 		'Q': 0.000836,
 		'Z': 0.000512,
 	}
-	lowest := math.MaxFloat64
-	plaintext := []byte{}
-	var outKey byte
+	var key byte
+	var plaintext []byte
+	smallestDif := math.MaxFloat64
 
-	for key := 0; key < 256; key++ {
-		pt := SingleByteXOrCipher(ct, byte(key))
-		newFreq := make(map[byte]float64)
-		otherCharacters := 0
-
+	//guess different byte values for the key
+	for k := 0; k < 256; k++ {
+		pt := SingleByteXOrCipher(ciphertext, byte(k))
+		ctFrequency := make(map[byte]float64)
+		//map each byte in the decrypted plaintext to it's frequency
 		for _, letter := range pt {
 			letter := byte(unicode.ToUpper(rune(letter)))
-			if letterFrequency[letter] > 0 {
-				newFreq[letter] = 1 / float64(len(ct))
-			} else {
-				otherCharacters += 1
-			}
+			ctFrequency[letter] += 1 / float64(len(ciphertext))
 		}
-		var difference float64
-		for k, _ := range letterFrequency {
-			difference += math.Abs(letterFrequency[k] - newFreq[k])
+
+		//compare the frequency of letters in English to the calculated frequency
+		//for our plaintext. the key with the smallest difference is
+		//most likely correct.
+		var freqDif float64
+		for letter, frequency := range ctFrequency {
+			freqDif += math.Abs(englishFrequency[letter] - frequency)
 		}
-		difference += float64(otherCharacters) / float64(len(ct))
-		if difference < lowest {
-			lowest = difference
+		if freqDif < smallestDif {
+			smallestDif = freqDif
 			plaintext = pt
-			outKey = byte(key)
+			key = byte(k)
 		}
 	}
-	return outKey, plaintext, lowest
+	return key, plaintext, smallestDif
 }
 
 func SingleByteXOrOracle(ct []byte) bool {
-	_, _, difference := BreakSingleByteXOr(ct)
-	// The .8 here is a magic value. Any value much larger than
+	_, _, difference := BreakSingleByteXOrCipher(ct)
+	// The .5 here is a magic value. Any value much larger than
 	// this is too far away from the average distribution to be
 	// interpreted as English
-	if difference > .8 {
-		return false
+	if difference < .5 {
+		return true
 	}
-	return true
+	return false
 }
 
 func HammingDistance(b1, b2 []byte) int {
@@ -132,40 +131,42 @@ func HammingDistance(b1, b2 []byte) int {
 	for i := 0; i < len(b1); i++ {
 		xor := int(b1[i] ^ b2[i])
 		for xor > 0 {
-			hd += xor % 2
-			xor = xor / 2
+			hd += xor & 1
+			xor = xor >> 1
 		}
 	}
 	return hd
 }
 
-func FindBestKeyLength(ct []byte) int {
+func FindBestXOrKeyLength(ct []byte) int {
 	smallestHd := math.MaxFloat64
-	var keyLen int
+	var keySize int
 	for i := 2; i < 41; i++ {
 		hd := float64(HammingDistance(ct[:i*4], ct[i*4:i*8])) / float64(i)
 		if hd < smallestHd {
 			smallestHd = hd
-			keyLen = i
+			keySize = i
 		}
 	}
-	return keyLen
+	return keySize
 }
 
 func BreakRepeatingKeyXOrCipher(ct []byte) []byte {
-	keyLen := FindBestKeyLength(ct)
+	keySize := FindBestXOrKeyLength(ct)
 	var ctBlocks [][]byte
 	//break the ciphertext into blocks of KEYSIZE length
-	for i := 0; i < len(ct)-keyLen; i += keyLen {
-		endIndex := i + keyLen
+	//the last block may be shorter if ct % keySize != 0
+	for i := 0; i < len(ct)-keySize; i += keySize {
+		endIndex := i + keySize
 		if endIndex > len(ct) {
 			endIndex = len(ct)
 		}
 		ctBlocks = append(ctBlocks, ct[i:endIndex])
 	}
-	//Now transpose the blocks: make a block that is the first byte of every block, and a block that is the second byte of every block, and so on.
+	//Now transpose the blocks: make a block that is the first byte of every
+	//block, and a block that is the second byte of every block, and so on.
 	var singleByteXOrBlocks [][]byte
-	for i := 0; i < keyLen; i++ {
+	for i := 0; i < keySize; i++ {
 		var newBlock []byte
 		for _, block := range ctBlocks {
 			if i < len(block) {
@@ -174,27 +175,26 @@ func BreakRepeatingKeyXOrCipher(ct []byte) []byte {
 		}
 		singleByteXOrBlocks = append(singleByteXOrBlocks, newBlock)
 	}
-	//Solve each block as if it was single-character XOR. You already have code to do this.
+	//Solve each block as if it was single-character XOR
 	var key []byte
 	for _, block := range singleByteXOrBlocks {
-		newChar, _, _ := BreakSingleByteXOr(block)
+		newChar, _, _ := BreakSingleByteXOrCipher(block)
 		key = append(key, newChar)
 	}
 	return key
 
 }
 
-//decryption function
-func AESInECBMode(ct, key []byte) []byte {
+func AESInECBModeDecrypt(ct, key []byte) []byte {
 	cipher, err := aes.NewCipher(key)
 	if err != nil {
 		panic(err)
 	}
-	bs := cipher.BlockSize()
+	bs := cipher.BlockSize() //Blocksize() should always return 16
 	if len(ct)%bs != 0 {
 		panic("Ciphertext length needs to be a multiple of the blocksize")
 	}
-	dst := make([]byte, 16, 16)
+	dst := make([]byte, bs)
 	var out []byte
 
 	for i := 0; i < len(ct); i += bs {
@@ -205,14 +205,20 @@ func AESInECBMode(ct, key []byte) []byte {
 	return out
 }
 
+/* 
+AESInECBMode checks if there are duplicate 16-byte blocks
+in the ciphertext, andc returns true if it finds any. 
+Otherwise, the function returns false.
+*/
 func AESInECBModeOracle(ct []byte) bool {
-	blocks := make(map[string]bool)
-	for i := 0; i < len(ct)-16; i += 16 {
-		block := string(ct[i : i+16])
-		if blocks[block] {
+	blockMap := make(map[string]bool)
+	blocks := BreakIntoBlocks(ct, 16)
+	for _, block := range blocks {
+		strBlock := string(block)
+		if blockMap[strBlock] {
 			return true
 		}
-		blocks[block] = true
+		blockMap[strBlock] = true
 	}
 	return false
 }
