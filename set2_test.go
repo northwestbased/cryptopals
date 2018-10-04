@@ -66,9 +66,8 @@ func Test_13(t *testing.T) {
 }
 
 func Test_14(t *testing.T) {
-	log.Print("\n\n\nProblem 14 Output:")
 	out := AttackECBSuffixWithPrefix()
-	log.Print(string(out))
+	log.Printf("Problem 14 Output:\n%v", string(out))
 }
 
 func Test_15(t *testing.T) {

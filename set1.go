@@ -54,9 +54,8 @@ encrypted using the Single Byte XOr Cypher. This function returns a
 the key, plaintext, and the difference between the average letter
 distribution for English and the plaintext.
 */
-func BreakSingleByteXOrCipher(ciphertext []byte) (byte, []byte, float64) {
-	//English letter frequency, including the space character
-	englishFrequency := map[byte]float64{
+func BreakSingleByteXOrCipher(ct []byte) (byte, []byte, float64) {
+	letterFrequency := map[byte]float64{
 		' ': 0.182884,
 		'E': 0.102666,
 		'T': 0.075169,
@@ -85,42 +84,45 @@ func BreakSingleByteXOrCipher(ciphertext []byte) (byte, []byte, float64) {
 		'Q': 0.000836,
 		'Z': 0.000512,
 	}
-	var key byte
-	var plaintext []byte
-	smallestDif := math.MaxFloat64
+	lowest := math.MaxFloat64
+	plaintext := []byte{}
+	var outKey byte
 
-	//guess different byte values for the key
-	for k := 0; k < 256; k++ {
-		pt := SingleByteXOrCipher(ciphertext, byte(k))
-		ctFrequency := make(map[byte]float64)
-		//map each byte in the decrypted plaintext to it's frequency
+	for key := 0; key < 256; key++ {
+		pt := SingleByteXOrCipher(ct, byte(key))
+		newFreq := make(map[byte]float64)
+		otherCharacters := 0
+
 		for _, letter := range pt {
 			letter := byte(unicode.ToUpper(rune(letter)))
-			ctFrequency[letter] += 1 / float64(len(ciphertext))
+			if letterFrequency[letter] > 0 {
+				newFreq[letter] = 1 / float64(len(ct))
+			} else {
+				otherCharacters += 1
+			}
 		}
-
-		//compare the frequency of letters in English to the calculated frequency
-		//for our plaintext. the key with the smallest difference is
-		//most likely correct.
-		var freqDif float64
-		for letter, frequency := range ctFrequency {
-			freqDif += math.Abs(englishFrequency[letter] - frequency)
+		var difference float64
+		for k, _ := range letterFrequency {
+			difference += math.Abs(letterFrequency[k] - newFreq[k])
 		}
-		if freqDif < smallestDif {
-			smallestDif = freqDif
+		difference += float64(otherCharacters) / float64(len(ct))
+		if difference < lowest {
+			lowest = difference
 			plaintext = pt
-			key = byte(k)
+			outKey = byte(key)
 		}
 	}
-	return key, plaintext, smallestDif
+	return outKey, plaintext, lowest
 }
+
+
 
 func SingleByteXOrOracle(ct []byte) bool {
 	_, _, difference := BreakSingleByteXOrCipher(ct)
-	// The .5 here is a magic value. Any value much larger than
+	// The .8 here is a magic value. Any value much larger than
 	// this is too far away from the average distribution to be
 	// interpreted as English
-	if difference < .5 {
+	if difference < .8 {
 		return true
 	}
 	return false

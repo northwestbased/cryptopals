@@ -2,9 +2,9 @@ package cryptopals
 
 import (
 	"bufio"
-	"os"
 	"crypto/rand"
 	"math/big"
+	"os"
 )
 
 func ReadFileByLine(filename string) ([]string, error) {
@@ -47,7 +47,21 @@ func Flatten(blocks [][]byte) []byte {
 }
 
 func GetRandomInt(max int) int {
-	nBig, _ := rand.Int(rand.Reader, big.NewInt(int64(max)))
+	nBig, err := rand.Int(rand.Reader, big.NewInt(int64(max)))
+	if err != nil {
+		panic(err)
+	}
 	return int(nBig.Int64())
 }
 
+func Key(length int) []byte {
+	if length < 1 {
+		panic("Length needs to be a positive number")
+	}
+	buf := make([]byte, length)
+	_, err := rand.Read(buf)
+	if err != nil {
+		panic(err)
+	}
+	return buf
+}

@@ -311,7 +311,6 @@ func AttackECBSuffixWithPrefix() []byte {
 	offsetLength = offsetLength % blockSize
 
 	offset := make([]byte, offsetLength)
-	log.Println("offsetlen", offsetLength)
 
 	ct = encrypter(make([]byte, blockSize*2+offsetLength))
 	blocks := BreakIntoBlocks(ct, blockSize)
@@ -322,7 +321,6 @@ func AttackECBSuffixWithPrefix() []byte {
 			break
 		}
 	}
-	log.Println("ourStart", ourStart)
 
 	paddingLength -= offsetLength
 
@@ -419,7 +417,6 @@ func initCommentEncryption() (func([]byte) []byte, func([]byte) bool) {
 		}
 		comment = append(comment, appendText...)
 		comment = append(prependText, comment...)
-		log.Println(string(comment))
 		comment = Pad(comment, 16)
 		return AESInCBCModeEncrypt(comment, key, iv)
 	}
