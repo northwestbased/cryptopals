@@ -115,8 +115,6 @@ func BreakSingleByteXOrCipher(ct []byte) (byte, []byte, float64) {
 	return outKey, plaintext, lowest
 }
 
-
-
 func SingleByteXOrOracle(ct []byte) bool {
 	_, _, difference := BreakSingleByteXOrCipher(ct)
 	// The .8 here is a magic value. Any value much larger than
@@ -207,9 +205,9 @@ func AESInECBModeDecrypt(ct, key []byte) []byte {
 	return out
 }
 
-/* 
+/*
 AESInECBMode checks if there are duplicate 16-byte blocks
-in the ciphertext, andc returns true if it finds any. 
+in the ciphertext, andc returns true if it finds any.
 Otherwise, the function returns false.
 */
 func AESInECBModeOracle(ct []byte) bool {

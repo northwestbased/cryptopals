@@ -9,9 +9,9 @@ import (
 
 func Test_1(t *testing.T) {
 	hex := "49276d206b696c6c696e6720796f757220627261696" +
-	"e206c696b65206120706f69736f6e6f7573206d757368726f6f6d"
+		"e206c696b65206120706f69736f6e6f7573206d757368726f6f6d"
 	expected := "SSdtIGtpbGxpbmcgeW91ciBicmFpbiBsaW" +
-	"tlIGEgcG9pc29ub3VzIG11c2hyb29t"
+		"tlIGEgcG9pc29ub3VzIG11c2hyb29t"
 
 	actual, err := HexToBase64(hex)
 

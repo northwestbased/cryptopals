@@ -267,7 +267,6 @@ func createAdminProfile() bool {
 	return isAdmin(payload)
 }
 
-
 func ECBWithUnknownSuffixAndPrefix() func([]byte) []byte {
 	b64Plaintext := "Um9sbGluJyBpbiBteSA1LjAKV2l0aCBteSByYWctdG9wIGRvd24gc28gbXkg" +
 		"aGFpciBjYW4gYmxvdwpUaGUgZ2lybGllcyBvbiBzdGFuZGJ5IHdhdmluZyBq" +
@@ -289,7 +288,6 @@ func ECBWithUnknownSuffixAndPrefix() func([]byte) []byte {
 		return AESInECBModeEncrypt(pt, key)
 	}
 }
-
 
 //admittedly, this function is a bit messy...
 func AttackECBSuffixWithPrefix() []byte {
