@@ -34,7 +34,6 @@ func Test_27(t *testing.T) {
 }
 
 func Test_28(t *testing.T) {
-	log.Println(SHA1([]byte("text"), []byte("key")))
-	log.Println(SHA1([]byte("texu"), []byte("key")))
-
+	log.Println(KeyedSHA1([]byte("key1"), []byte("val1")))
+	log.Println(KeyedSHA1([]byte("key1"), []byte("val2")))
 }
